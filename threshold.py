@@ -41,6 +41,40 @@ def accuracy_at_threshold(
     return float((pred == labels).mean())
 
 
+def accuracy_at_threshold_masked(
+    scores: np.ndarray,
+    labels: np.ndarray,
+    valid: np.ndarray,
+    threshold: float,
+) -> float:
+    """
+    仅在 ``valid==True`` 的位置上计算准确率（分母为有效对数）。
+
+    若无有效对，返回 ``nan``。
+    """
+    v = valid.astype(bool, copy=False)
+    if not np.any(v):
+        return float("nan")
+    pred = (scores >= threshold).astype(np.int32)
+    return float(((pred == labels) & v).sum() / np.sum(v))
+
+
+def select_threshold_max_train_accuracy_masked(
+    scores: np.ndarray,
+    labels: np.ndarray,
+    valid: np.ndarray,
+) -> float:
+    """
+    仅在训练折有效样本上进行中点阈值搜索（忽略 nan 分数与 valid=False）。
+    """
+    m = valid.astype(bool, copy=False) & np.isfinite(scores)
+    s = scores[m]
+    y = labels[m]
+    if s.size == 0:
+        raise ValueError("训练折无有效配对，无法搜索阈值")
+    return select_threshold_max_train_accuracy(s, y)
+
+
 def select_threshold_max_train_accuracy(
     scores_train: np.ndarray, labels_train: np.ndarray
 ) -> float:

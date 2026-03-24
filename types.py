@@ -22,3 +22,9 @@ class TenFoldResult:
     std_accuracy: float
     fold_accuracies: tuple[float, ...]
     fold_thresholds: tuple[float, ...]
+    #: 输入配对总数（与折划分长度一致，通常为 6000）
+    total_pairs: int
+    #: 两端特征均有效、且维度一致的配对数量
+    valid_pair_count: int
+    #: 每一折测试子集中有效配对数（分母）；用于核对缺失对分布
+    fold_test_valid_counts: tuple[int, ...]

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Literal, Mapping
 
 import numpy as np
 
-from .similarity import pairs_to_scores_and_labels
-from .threshold import accuracy_at_threshold, select_threshold_max_train_accuracy
+from .similarity import pairs_to_scores_and_labels, pairs_to_scores_labels_valid
+from .threshold import (
+    accuracy_at_threshold,
+    accuracy_at_threshold_masked,
+    select_threshold_max_train_accuracy,
+    select_threshold_max_train_accuracy_masked,
+)
 from .types import FacePair, TenFoldResult
 
 
@@ -16,6 +21,7 @@ def evaluate_10fold(
     pairs: list[FacePair],
     *,
     n_folds: int = 10,
+    on_missing: Literal["raise", "mask"] = "raise",
 ) -> TenFoldResult:
     """
     假定 ``pairs`` 的顺序与 LFW View-2 一致：总长 ``n_folds * fold_size``，
@@ -30,6 +36,11 @@ def evaluate_10fold(
     未按折重排，则前 600 对全是同人，与标准 10 折块划分不一致，需先按官方折
     顺序重排或改用显式折索引（可另行扩展 API）。
 
+    ``on_missing``:
+        - ``raise``：任一对缺特征或维度不一致则报错（与旧行为一致）。
+        - ``mask``：保留长度 ``n`` 与折下标；无效对不参与阈值搜索与准确率分母，
+          折划分仍按原始下标，避免「删掉部分对后长度非 6000」导致无法分折。
+
     若长度不能整除 ``n_folds``，抛出 ValueError。
     """
     n = len(pairs)
@@ -42,10 +53,15 @@ def evaluate_10fold(
         )
     fold_size = n // n_folds
 
-    scores, labels = pairs_to_scores_and_labels(features, pairs)
+    if on_missing == "raise":
+        scores, labels = pairs_to_scores_and_labels(features, pairs)
+        valid = np.ones(n, dtype=bool)
+    else:
+        scores, labels, valid = pairs_to_scores_labels_valid(features, pairs)
 
     fold_accs: list[float] = []
     fold_ts: list[float] = []
+    fold_test_valid: list[int] = []
 
     for k in range(n_folds):
         lo, hi = k * fold_size, (k + 1) * fold_size
@@ -53,23 +69,52 @@ def evaluate_10fold(
         test_mask[lo:hi] = True
         train_mask = ~test_mask
 
-        scores_tr = scores[train_mask]
-        labels_tr = labels[train_mask]
-        scores_te = scores[test_mask]
-        labels_te = labels[test_mask]
+        valid_tr = train_mask & valid
+        valid_te = test_mask & valid
+        n_te = int(np.count_nonzero(valid_te))
+        fold_test_valid.append(n_te)
 
-        t = select_threshold_max_train_accuracy(scores_tr, labels_tr)
-        acc_te = accuracy_at_threshold(scores_te, labels_te, t)
+        if on_missing == "raise":
+            scores_tr = scores[train_mask]
+            labels_tr = labels[train_mask]
+            scores_te = scores[test_mask]
+            labels_te = labels[test_mask]
+            t = select_threshold_max_train_accuracy(scores_tr, labels_tr)
+            acc_te = accuracy_at_threshold(scores_te, labels_te, t)
+        else:
+            if not np.any(valid_tr):
+                raise ValueError(
+                    f"第 {k} 折：训练侧（其余 9 折）无有效配对，无法搜索阈值"
+                )
+            t = select_threshold_max_train_accuracy_masked(
+                scores, labels, valid_tr
+            )
+            acc_te = accuracy_at_threshold_masked(scores, labels, valid_te, t)
+
         fold_accs.append(acc_te)
         fold_ts.append(t)
 
     arr = np.asarray(fold_accs, dtype=np.float64)
-    mean_acc = float(arr.mean())
-    std_acc = float(arr.std(ddof=1)) if arr.size > 1 else 0.0
+    finite = np.isfinite(arr)
+    if not np.any(finite):
+        mean_acc = float("nan")
+        std_acc = float("nan")
+    else:
+        mean_acc = float(np.nanmean(arr))
+        std_acc = (
+            float(np.nanstd(arr, ddof=1))
+            if int(np.sum(finite)) > 1
+            else 0.0
+        )
+
+    valid_count = int(np.count_nonzero(valid))
 
     return TenFoldResult(
         mean_accuracy=mean_acc,
         std_accuracy=std_acc,
         fold_accuracies=tuple(fold_accs),
         fold_thresholds=tuple(fold_ts),
+        total_pairs=n,
+        valid_pair_count=valid_count,
+        fold_test_valid_counts=tuple(fold_test_valid),
     )
