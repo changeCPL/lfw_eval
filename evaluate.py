@@ -6,6 +6,11 @@ from typing import Literal, Mapping
 
 import numpy as np
 
+from .metrics import (
+    binary_metrics_at_threshold_masked,
+    precision_recall_curve_masked,
+    roc_curve_masked,
+)
 from .similarity import pairs_to_scores_and_labels, pairs_to_scores_labels_valid
 from .threshold import (
     accuracy_at_threshold,
@@ -22,6 +27,7 @@ def evaluate_10fold(
     *,
     n_folds: int = 10,
     on_missing: Literal["raise", "mask"] = "raise",
+    include_curves: bool = False,
 ) -> TenFoldResult:
     """
     假定 ``pairs`` 的顺序与 LFW View-2 一致：总长 ``n_folds * fold_size``，
@@ -40,6 +46,10 @@ def evaluate_10fold(
         - ``raise``：任一对缺特征或维度不一致则报错（与旧行为一致）。
         - ``mask``：保留长度 ``n`` 与折下标；无效对不参与阈值搜索与准确率分母，
           折划分仍按原始下标，避免「删掉部分对后长度非 6000」导致无法分折。
+
+    ``include_curves``：为 True 时，在**每一折的测试子集**上额外计算 ROC 与 PR 曲线
+    （用于 TPR@FPR、AUC、Precision@Recall 等工作点或绘图）；折与折之间曲线独立，
+    若需「全数据一条 ROC」请自行合并分数（注意与 CV 口径不同）。
 
     若长度不能整除 ``n_folds``，抛出 ValueError。
     """
@@ -62,6 +72,9 @@ def evaluate_10fold(
     fold_accs: list[float] = []
     fold_ts: list[float] = []
     fold_test_valid: list[int] = []
+    fold_bin: list = []
+    fold_rocs: list = []
+    fold_prs: list = []
 
     for k in range(n_folds):
         lo, hi = k * fold_size, (k + 1) * fold_size
@@ -94,6 +107,13 @@ def evaluate_10fold(
         fold_accs.append(acc_te)
         fold_ts.append(t)
 
+        bm = binary_metrics_at_threshold_masked(scores, labels, valid_te, t)
+        fold_bin.append(bm)
+
+        if include_curves:
+            fold_rocs.append(roc_curve_masked(scores, labels, valid_te))
+            fold_prs.append(precision_recall_curve_masked(scores, labels, valid_te))
+
     arr = np.asarray(fold_accs, dtype=np.float64)
     finite = np.isfinite(arr)
     if not np.any(finite):
@@ -117,4 +137,7 @@ def evaluate_10fold(
         total_pairs=n,
         valid_pair_count=valid_count,
         fold_test_valid_counts=tuple(fold_test_valid),
+        fold_test_binary_metrics=tuple(fold_bin),
+        fold_roc=tuple(fold_rocs) if include_curves else None,
+        fold_pr=tuple(fold_prs) if include_curves else None,
     )

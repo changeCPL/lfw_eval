@@ -4,6 +4,41 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
+
+@dataclass(frozen=True)
+class BinaryVerificationMetrics:
+    """在某一阈值、某一子集（如单折测试）上的验证指标。"""
+
+    true_positive: int
+    false_positive: int
+    true_negative: int
+    false_negative: int
+    tpr: float
+    fpr: float
+    tnr: float
+    precision: float
+    recall: float
+    f1: float
+    accuracy: float
+    n_genuine: int
+    n_impostor: int
+
+
+@dataclass(frozen=True)
+class RocCurve:
+    fpr: np.ndarray
+    tpr: np.ndarray
+    thresholds: np.ndarray
+
+
+@dataclass(frozen=True)
+class PRCurve:
+    precision: np.ndarray
+    recall: np.ndarray
+    thresholds: np.ndarray
+
 
 @dataclass(frozen=True)
 class FacePair:
@@ -28,3 +63,9 @@ class TenFoldResult:
     valid_pair_count: int
     #: 每一折测试子集中有效配对数（分母）；用于核对缺失对分布
     fold_test_valid_counts: tuple[int, ...]
+    #: 每一折在「该折训练得到的阈值」下，测试子集上的二分类指标
+    fold_test_binary_metrics: tuple[BinaryVerificationMetrics, ...]
+    #: 每折测试子集上的 ROC；仅 ``include_curves=True`` 时非空
+    fold_roc: tuple[RocCurve, ...] | None
+    #: 每折测试子集上的 PR 曲线；仅 ``include_curves=True`` 时非空
+    fold_pr: tuple[PRCurve, ...] | None
