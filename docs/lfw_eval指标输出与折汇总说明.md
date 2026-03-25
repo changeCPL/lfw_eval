@@ -1,6 +1,10 @@
 # LFW 风格评测：当前输出指标与「是否每折再平均」
 
+> **文档位置**：以本包内 `lfw_eval/docs/` 为唯一维护目录；请勿在项目根目录 `docs/` 下保留副本以免分歧。
+
 本文整理自对 `lfw_eval` 包行为与统计口径的说明，便于写报告或对接实验记录。
+
+**算法细节**（训练阈值如何搜、ROC/PR/AUC/AP 如何算）：见同目录 [`阈值搜索与ROC-PR计算说明.md`](阈值搜索与ROC-PR计算说明.md)。
 
 ---
 
@@ -52,8 +56,8 @@
 
 - `auc_trapezoid`（ROC-AUC）
 - `average_precision_from_pr`（由 PR 折线近似 AP）
-- `max_tpr_at_fpr_cap`（如 TAR@FAR）
-- `best_precision_at_min_recall`（给定 Recall 下界时的 Precision）
+- `max_tpr_at_fpr_cap`（如 TAR@FAR，返回 `tpr`、**实际 `fpr`** 与**相似度阈值**）
+- `best_precision_at_min_recall`（给定 Recall 下界时的最大 Precision，返回 `precision`、`recall` 与**同一套相似度阈值**）
 
 再在 10 折上**自行决定**是否取平均、是否报告 std。这与论文中「每折一条曲线再平均」的做法一致时，需在报告中写清。
 

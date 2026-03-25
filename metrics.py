@@ -175,7 +175,7 @@ def max_tpr_at_fpr_cap(
     max_fpr: float,
     *,
     mode: Literal["leq", "closest"] = "leq",
-) -> tuple[float, float]:
+) -> tuple[float, float, float]:
     """
     **TPR@FPR** 工作点（人脸中常写 TAR@FAR）。
 
@@ -183,45 +183,66 @@ def max_tpr_at_fpr_cap(
       用于「把误识率压到不超过某值时，通过率能到多少」。
     - ``closest``：选 FPR 与 ``max_fpr`` 最接近且不超过或最接近的点（简化实现：仍优先 leq，若无则取最小 FPR 点）。
 
-    返回 ``(tpr, threshold)``；若无有效点则 ``(nan, nan)``。
+    返回 ``(tpr, fpr, threshold)``：``fpr`` 为所选离散点上的**实际 FPR**（通常 ≤ ``max_fpr``）；
+    ``threshold`` 为**相似度得分**（与 ``evaluate_10fold`` 一致：``score >= threshold`` 判为同人）。
+    若无有效点则 ``(nan, nan, nan)``。
     """
     fpr = roc.fpr
     tpr = roc.tpr
     thr = roc.thresholds
+    nan3 = (float("nan"), float("nan"), float("nan"))
     if fpr.size == 0:
-        return float("nan"), float("nan")
+        return nan3
 
     if mode == "leq":
         ok = fpr <= max_fpr + 1e-12
         if not np.any(ok):
-            return float("nan"), float("nan")
+            return nan3
         idx = int(np.argmax(np.where(ok, tpr, -1.0)))
-        return float(tpr[idx]), float(thr[idx])
+        return float(tpr[idx]), float(fpr[idx]), float(thr[idx])
 
     # closest: 找 fpr 最接近 max_fpr 的点
     idx = int(np.argmin(np.abs(fpr - max_fpr)))
-    return float(tpr[idx]), float(thr[idx])
+    return float(tpr[idx]), float(fpr[idx]), float(thr[idx])
 
 
 def best_precision_at_min_recall(
     pr: PRCurve,
     min_recall: float,
-) -> tuple[float, float]:
+) -> tuple[float, float, float]:
     """
     **Precision@Recall**：在满足 ``Recall >= min_recall`` 的 PR 点上取 **最大 Precision**。
 
-    返回 ``(precision, recall)``；若无满足点则 ``(nan, nan)``。
+    返回 ``(precision, recall, threshold)``。``threshold`` 为达到该工作点的**相似度得分**
+    （与全库一致：``score >= threshold`` 判为同人），便于与 TPR@FPR 的返回值对齐、直接用于部署。
+
+    ``PRCurve`` 中首点常为 ``(precision=1, recall=0)``（对应「几乎全判异人」），无有限阈值，
+    此时第三元为 ``nan``。
+
+    若无满足 ``Recall >= min_recall`` 的点，返回 ``(nan, nan, nan)``。
     """
     prec = pr.precision
     rec = pr.recall
+    thr_arr = pr.thresholds
     if prec.size == 0:
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), float("nan")
     ok = rec >= min_recall - 1e-12
     if not np.any(ok):
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), float("nan")
     masked = np.where(ok, prec, -1.0)
     idx = int(np.argmax(masked))
-    return float(prec[idx]), float(rec[idx])
+    p_i = float(prec[idx])
+    r_i = float(rec[idx])
+    if idx == 0:
+        t_i = float("nan")
+    else:
+        # precision_ext[k]、recall_ext[k]（k>=1）对应加入第 k 个高分样本后的状态，分界阈值为 thresholds[k-1]
+        t_idx = idx - 1
+        if t_idx < thr_arr.size:
+            t_i = float(thr_arr[t_idx])
+        else:
+            t_i = float("nan")
+    return p_i, r_i, t_i
 
 
 def summarize_binary_metrics_across_folds(
