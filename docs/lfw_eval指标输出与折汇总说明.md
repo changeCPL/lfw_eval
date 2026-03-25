@@ -84,3 +84,46 @@
 - **Acc**：已在 `TenFoldResult` 里给出 **mean ± std**（按折）。
 - **TPR / FPR / Precision 等**：在结果里是**每折一套**；若要总体标量 mean，请调用 `summarize_binary_metrics_across_folds` 或自行统计。
 - **曲线类与工作点**：依赖 `include_curves=True` 后在每折 ROC/PR 上计算，是否再平均由实验设计决定。
+
+---
+
+## 7. 模型对比建议（可直接用于主表）
+
+建议把指标分成三层，避免“全是曲线”或“只报 Acc”：
+
+1. **协议主指标（10-fold）**  
+   - `mean_accuracy ± std_accuracy`  
+   - `summarize_binary_metrics_across_folds(...)` 的 `mean_tpr/mean_fpr/mean_precision`（必要时再补 std）
+
+2. **阈值无关的整体区分能力**  
+   - ROC-AUC（`auc_trapezoid(fold_roc[k].fpr, fold_roc[k].tpr)`）  
+   - AP（`average_precision_from_pr(fold_pr[k])`）  
+   - 推荐同样按 10 折报 `mean ± std`
+
+3. **业务工作点（阈值由约束反推）**  
+   - `max_tpr_at_fpr_cap`（TPR@FPR / TAR@FAR）  
+   - `best_precision_at_min_recall`（Precision@Recall）  
+   - 统一固定约束（如 `FPR<=1e-3`、`Recall>=0.95`），并报 10 折 `mean ± std`
+
+主文建议报“均值±标准差”；每折明细可放附录，不建议在主文堆 10×多列。
+
+---
+
+## 8. 新增：整数据集评测接口（不做 fold）
+
+当数据集没有官方折、或你希望单次整体评估时，可用 `overall.py` 提供的新接口：
+
+- `evaluate_whole_set_curves(features, pairs, ...)`  
+  返回：
+  - `roc`、`pr`
+  - `roc_auc`、`ap`
+  - `tpr_at_fpr`（字典：`cap -> (tpr, fpr, threshold)`）
+  - `precision_at_recall`（字典：`min_recall -> (precision, recall, threshold)`）
+  - `total_pairs`、`valid_pair_count`
+
+- `evaluate_whole_set_at_threshold(features, pairs, threshold, ...)`  
+  返回：
+  - 给定阈值下的 `BinaryVerificationMetrics`（`accuracy/tpr/fpr/precision/...`）
+  - `total_pairs`、`valid_pair_count`、`threshold`
+
+> 注意：这两者是“全数据口径”，与 10-fold 交叉验证口径不同；报告时请明确说明。

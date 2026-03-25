@@ -12,6 +12,7 @@ from .metrics import (
     summarize_binary_metrics_across_folds,
 )
 from .pair_parser import parse_pair_line, parse_pair_lines
+from .overall import evaluate_whole_set_at_threshold, evaluate_whole_set_curves
 from .similarity import pairs_to_scores_and_labels, pairs_to_scores_labels_valid
 from .types import (
     BinaryVerificationMetrics,
@@ -32,6 +33,8 @@ __all__ = [
     "best_precision_at_min_recall",
     "binary_metrics_at_threshold_masked",
     "evaluate_10fold",
+    "evaluate_whole_set_at_threshold",
+    "evaluate_whole_set_curves",
     "max_tpr_at_fpr_cap",
     "pairs_to_scores_and_labels",
     "pairs_to_scores_labels_valid",
